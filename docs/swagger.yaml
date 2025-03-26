@@ -1,0 +1,468 @@
+openapi: 3.0.3
+info:
+  title: APISentry API
+  description: Lightweight uptime monitoring system
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: /api/v1
+    description: Main API server
+
+components:
+  schemas:
+    Endpoint:
+      type: object
+      required:
+        - url
+        - interval
+      properties:
+        id:
+          type: integer
+          readOnly: true
+          example: 1
+        url:
+          type: string
+          format: uri
+          example: "https://example.com/health"
+        interval:
+          type: string
+          format: duration
+          example: "30s"
+        retry_strategy:
+          type: string
+          enum: [exponential, simple, jitter]
+          default: "simple"
+        max_retries:
+          type: integer
+          minimum: 0
+          maximum: 10
+          default: 3
+        status:
+          type: string
+          enum: [active, paused]
+          readOnly: true
+          example: "active"
+        notifications:
+          $ref: '#/components/schemas/Notifications'
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+
+    CheckResult:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        endpoint_id:
+          type: integer
+        status_code:
+          type: integer
+          example: 200
+        response_time:
+          type: number
+          format: float
+        success:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+        error:
+          type: string
+          nullable: true
+
+    Notifications:
+      type: object
+      properties:
+        webhooks:
+          type: array
+          items:
+            type: string
+            format: uri
+        emails:
+          type: array
+          items:
+            type: string
+            format: email
+        telegram:
+          type: array
+          items:
+            type: string
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 404
+        message:
+          type: string
+          example: "Endpoint not found"
+        details:
+          type: array
+          items:
+            type: string
+
+    WebhookRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+
+    EmailRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    TelegramRequest:
+      type: object
+      required: [chat_id]
+      properties:
+        chat_id:
+          type: string
+
+    StatsOverview:
+      type: object
+      properties:
+        total_endpoints:
+          type: integer
+        uptime_percentage:
+          type: number
+
+    EndpointStats:
+      type: object
+      properties:
+        uptime_24h:
+          type: number
+        avg_response_time:
+          type: number
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /endpoints:
+    post:
+      tags: [Endpoints]
+      summary: Create new endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Endpoint'
+      responses:
+        201:
+          description: Endpoint created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Endpoint'
+        400:
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      tags: [Endpoints]
+      summary: List all endpoints
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Endpoint'
+
+  /endpoints/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Endpoints]
+      summary: Get endpoint details
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Endpoint'
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags: [Endpoints]
+      summary: Update endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Endpoint'
+      responses:
+        200:
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Endpoint'
+    delete:
+      tags: [Endpoints]
+      summary: Delete endpoint
+      responses:
+        204:
+          description: Deleted
+        404:
+          description: Not found
+
+  /endpoints/{id}/checks:
+    get:
+      tags: [Checks]
+      summary: Get check history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        200:
+          description: Success
+          headers:
+            X-Total-Count:
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CheckResult'
+
+  /endpoints/{id}/checks/export:
+    get:
+      tags: [Checks]
+      summary: Export check history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+      responses:
+        200:
+          description: Exported data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CheckResult'
+            text/csv:
+              schema:
+                type: string
+
+  /endpoints/{id}/force-check:
+    post:
+      tags: [Checks]
+      summary: Force check
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        202:
+          description: Check initiated
+        404:
+          description: Endpoint not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /notifications/webhooks:
+    post:
+      tags: [Notifications]
+      summary: Add webhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookRequest'
+      responses:
+        201:
+          description: Webhook added
+
+  /notifications/emails:
+    post:
+      tags: [Notifications]
+      summary: Add email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailRequest'
+      responses:
+        201:
+          description: Email added
+
+  /notifications/telegram:
+    post:
+      tags: [Notifications]
+      summary: Add Telegram chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelegramRequest'
+      responses:
+        201:
+          description: Telegram chat added
+
+  /notifications/{type}/{id}:
+    delete:
+      tags: [Notifications]
+      summary: Remove notification
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [webhooks, emails, telegram]
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        204:
+          description: Removed
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /stats/overview:
+    get:
+      tags: [Statistics]
+      summary: Overall statistics
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsOverview'
+
+  /stats/realtime:
+    get:
+      tags: [Statistics]
+      summary: Real-time statistics (SSE)
+      responses:
+        200:
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /stats/endpoints/{id}:
+    get:
+      tags: [Statistics]
+      summary: Endpoint statistics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EndpointStats'
+
+  /health:
+    get:
+      tags: [System]
+      summary: Service health
+      security: []
+      responses:
+        200:
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /metrics:
+    get:
+      tags: [System]
+      summary: Prometheus metrics
+      security: []
+      responses:
+        200:
+          description: Metrics
+          content:
+            text/plain:
+              schema:
+                type: string
