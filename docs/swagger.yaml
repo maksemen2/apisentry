@@ -375,6 +375,30 @@ paths:
         201:
           description: Telegram chat added
 
+  /notifications/endpoints/{id}:
+    get:
+      tags: [Notifications]
+      summary: Get notifications by endpoint id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notifications'
+        404:
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /notifications/{type}/{id}:
     delete:
       tags: [Notifications]
