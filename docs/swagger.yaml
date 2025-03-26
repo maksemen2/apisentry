@@ -128,6 +128,8 @@ components:
       required: [chat_id]
       properties:
         chat_id:
+          type: integer
+        bot_token:
           type: string
 
     StatsOverview:
